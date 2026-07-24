@@ -64,7 +64,7 @@ export async function tnceraUploader(workbook, onProgress) {
   }
 
   // ── 4. Build TNCERALocationRow objects (Requirements 2.x, 3.2, 3.4) ───────
-  const locationRows = rawRows.map((row, index) => {
+  const builtRows = rawRows.map((row) => {
     const rawNameAddress = row['Name and Address of Clinical Establishment']
     const { facility_name, address_text, query_text } = parseTnceraRow(rawNameAddress)
 
@@ -81,18 +81,30 @@ export async function tnceraUploader(workbook, onProgress) {
     }
   })
 
+  // Deduplicate within the file itself: if the same tncera_no or query_text
+  // appears more than once, keep only the last occurrence so we never send
+  // conflicting rows to Supabase in the same batch.
+  const seenTnceraNo = new Map()
+  const seenQueryText = new Map()
+  for (const row of builtRows) {
+    seenTnceraNo.set(row.tncera_no, row)
+    seenQueryText.set(row.query_text, row)
+  }
+  // Use tncera_no dedup map as the canonical set (it subsumes query_text dupes)
+  const locationRows = [...seenTnceraNo.values()]
+
   // Report progress after building all rows (pre-upsert phase complete)
   if (typeof onProgress === 'function') {
     onProgress(0, locationRows.length)
   }
 
   // ── 5. Upsert to `tncera_locations` (Requirements 3.1, 3.4) ───────────────
-  // ignoreDuplicates: true — on conflict with `query_text` unique constraint,
-  // skip the row and leave the existing row (including its geocode_status) unchanged.
+  // Use tncera_no as the conflict key (it is UNIQUE in the schema).
+  // ignoreDuplicates: true leaves existing rows (and their geocode_status) untouched.
   const { error: upsertError } = await supabase
     .from('tncera_locations')
     .upsert(locationRows, {
-      onConflict: 'query_text',
+      onConflict: 'tncera_no',
       ignoreDuplicates: true,
     })
 
