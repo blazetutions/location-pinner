@@ -3,9 +3,9 @@ import { supabase } from './supabaseClient'
 import AuthGate from './components/AuthGate'
 import AdminPanel from './components/AdminPanel'
 import ExcelUploader from './components/ExcelUploader'
-import GeocodingProgress from './components/GeocodingProgress'
+import TnceraGeocodingProgress from './components/TnceraGeocodingProgress'
 import MapDisplay from './components/MapDisplay'
-import FiltersSidebar from './components/FiltersSidebar'
+import TnceraFiltersSidebar from './components/TnceraFiltersSidebar'
 import ExportImport from './components/ExportImport'
 import { useRole } from './hooks/useRole'
 import './index.css'
@@ -13,31 +13,27 @@ import './index.css'
 function AppContent() {
   const { isAdmin, loading: roleLoading } = useRole()
 
-  // State shared between upload, geocoding, map, and filters
-  const [locationRows, setLocationRows] = useState([])
-  const [activeFilters, setActiveFilters] = useState({
-    zone: null, block: null, phc: null, statuses: [],
-  })
   const [showUploader, setShowUploader] = useState(false)
+  const [tnceraRows, setTnceraRows] = useState([])
+  const [tnceraFilters, setTnceraFilters] = useState({ districts: [], types: [], statuses: [] })
 
   async function handleLogout() {
     await supabase.auth.signOut()
   }
 
-  function handleUploadComplete(rows) {
-    setLocationRows(rows)
+  function handleTnceraUploadComplete(rows) {
+    setTnceraRows(rows)
   }
 
-  function handleGeocodingComplete() {
-    // Trigger a map refresh by re-setting locationRows
-    setLocationRows(prev => [...prev])
+  function handleTnceraGeocodingComplete() {
+    setTnceraRows(prev => [...prev])
   }
 
   return (
     <div className="app">
       {/* ── Header ── */}
       <header className="app-header">
-        <h1>TN Health Map</h1>
+        <h1>TN Clinical Establishments Map</h1>
 
         {roleLoading ? (
           <span className="role-loading" aria-live="polite">Loading…</span>
@@ -67,26 +63,24 @@ function AppContent() {
       {/* ── Upload panel (collapsible) ── */}
       {showUploader && (
         <div className="upload-panel">
-          <ExcelUploader onUploadComplete={handleUploadComplete} />
-          <GeocodingProgress
-            locationRows={locationRows}
-            onGeocodingComplete={handleGeocodingComplete}
-          />
+          <ExcelUploader onTnceraUploadComplete={handleTnceraUploadComplete} />
+          {tnceraRows.length > 0 && (
+            <TnceraGeocodingProgress
+              tnceraRows={tnceraRows}
+              onGeocodingComplete={handleTnceraGeocodingComplete}
+            />
+          )}
         </div>
       )}
 
       {/* ── Main layout: sidebar + map ── */}
       <div className="app-body">
-        <FiltersSidebar
-          locations={locationRows}
-          userStatuses={new Map()}
-          onFilterChange={setActiveFilters}
+        <TnceraFiltersSidebar
+          locations={tnceraRows}
+          onFilterChange={setTnceraFilters}
         />
         <div className="map-wrapper">
-          <MapDisplay
-            activeFilters={activeFilters}
-            isAdmin={isAdmin}
-          />
+          <MapDisplay tnceraFilters={tnceraFilters} />
         </div>
       </div>
 

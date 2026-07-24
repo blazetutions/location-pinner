@@ -5,14 +5,16 @@ import { exportUserData, importUserData } from '../lib/exportImport'
 /**
  * ExportImport — UI component for exporting and importing user status data.
  *
- * Requirements: 11.1, 11.3, 11.6, 11.7
+ * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7
  *
  * Behaviour:
  * - On mount, fetches the current authenticated user's ID from Supabase.
  * - Export button: calls exportUserData(userId) and shows a success message.
+ *   The exported file contains both PHC/HSC and TNCERA statuses in a combined
+ *   JSON object { phc_hsc: [...], tncera: [...] }.
  * - Import file input: reads the selected .json file as text and calls
  *   importUserData(userId, text), then shows the count of upserted records
- *   or a descriptive error message.
+ *   per table (PHC/HSC and TNCERA) or a descriptive error message.
  * - Both operations show a loading state while in progress.
  */
 export default function ExportImport() {
@@ -63,7 +65,16 @@ export default function ExportImport() {
       if (result.errors && result.errors.length > 0) {
         setImportStatus({ type: 'error', message: result.errors.join('; ') })
       } else {
-        setImportStatus({ type: 'success', message: `Imported ${result.upserted} records` })
+        // Display per-table counts (Requirement 9.7)
+        const parts = []
+        if (result.upsertedPhcHsc > 0 || result.upsertedTncera === 0) {
+          parts.push(`${result.upsertedPhcHsc} PHC/HSC record${result.upsertedPhcHsc !== 1 ? 's' : ''}`)
+        }
+        if (result.upsertedTncera > 0) {
+          parts.push(`${result.upsertedTncera} TNCERA record${result.upsertedTncera !== 1 ? 's' : ''}`)
+        }
+        const summary = parts.length > 0 ? parts.join(', ') : '0 records'
+        setImportStatus({ type: 'success', message: `Imported ${summary}` })
       }
     } catch (err) {
       setImportStatus({ type: 'error', message: err.message || 'Import failed' })

@@ -161,7 +161,7 @@ describe('ExportImport', () => {
 
   it('calls importUserData with userId and file text when a file is selected', async () => {
     setupAuthMock()
-    mockImportUserData.mockResolvedValue({ upserted: 5, errors: [] })
+    mockImportUserData.mockResolvedValue({ upsertedPhcHsc: 5, upsertedTncera: 0, errors: [] })
 
     render(<ExportImport />)
 
@@ -185,7 +185,7 @@ describe('ExportImport', () => {
 
   it('shows "Imported X records" after a successful import (Requirement 11.6)', async () => {
     setupAuthMock()
-    mockImportUserData.mockResolvedValue({ upserted: 42, errors: [] })
+    mockImportUserData.mockResolvedValue({ upsertedPhcHsc: 42, upsertedTncera: 0, errors: [] })
 
     render(<ExportImport />)
 
@@ -198,7 +198,7 @@ describe('ExportImport', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText(/imported 42 records/i)).toBeInTheDocument()
+      expect(screen.getByText(/imported 42 phc\/hsc records/i)).toBeInTheDocument()
     })
   })
 

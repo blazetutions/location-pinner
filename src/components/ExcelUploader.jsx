@@ -4,20 +4,29 @@ import { supabase } from '../supabaseClient'
 import { validateColumns } from '../lib/validateColumns'
 import { buildQueryText } from '../lib/buildQueryText'
 import { downloadSampleExcel } from '../lib/downloadSampleExcel'
+import { detectExcelFormat } from '../lib/detectExcelFormat'
+import { tnceraUploader } from '../lib/tnceraUploader'
 
 /**
  * ExcelUploader component
  *
- * Accepts .xlsx/.xls file input, parses with SheetJS, validates columns,
- * upserts PHC and HSC records to Supabase `locations`, and calls
- * onUploadComplete(locationRows) after a successful upsert.
+ * Accepts .xlsx/.xls file input, parses with SheetJS, auto-detects format
+ * (TNCERA or PHC/HSC), and routes to the appropriate upload path.
  *
- * @param {{ onUploadComplete: (rows: object[]) => void }} props
+ * For TNCERA files: calls tnceraUploader(workbook) and onTnceraUploadComplete(rows).
+ * For PHC/HSC files: continues with the existing validation + upsert flow and
+ * calls onUploadComplete(locationRows).
+ *
+ * @param {{
+ *   onUploadComplete: (rows: object[]) => void,
+ *   onTnceraUploadComplete?: (rows: object[]) => void
+ * }} props
  */
-function ExcelUploader({ onUploadComplete }) {
+function ExcelUploader({ onUploadComplete, onTnceraUploadComplete }) {
   const [parseError, setParseError] = useState(null)
   const [uploadStatus, setUploadStatus] = useState(null) // { inserted, skipped } | null
   const [isProcessing, setIsProcessing] = useState(false)
+  const [detectedFormat, setDetectedFormat] = useState(null) // 'tncera' | 'phc_hsc' | null
 
   async function handleFileChange(event) {
     const file = event.target.files[0]
@@ -26,12 +35,44 @@ function ExcelUploader({ onUploadComplete }) {
     // Reset previous state
     setParseError(null)
     setUploadStatus(null)
+    setDetectedFormat(null)
     setIsProcessing(true)
 
     try {
       // Step 1: Parse the Excel file
       const buffer = await file.arrayBuffer()
       const workbook = XLSX.read(buffer, { type: 'array' })
+
+      // Extract first sheet rows for format detection
+      const firstSheetName = workbook.SheetNames[0]
+      const firstSheet = workbook.Sheets[firstSheetName]
+      const firstSheetRows = XLSX.utils.sheet_to_json(firstSheet)
+
+      // Step 2: Detect format
+      const format = detectExcelFormat(firstSheetRows)
+      setDetectedFormat(format)
+
+      // ── TNCERA path ────────────────────────────────────────────────────────
+      if (format === 'tncera') {
+        const result = await tnceraUploader(workbook)
+
+        if (result.error) {
+          setParseError(result.error)
+          setIsProcessing(false)
+          return
+        }
+
+        setUploadStatus({ inserted: result.inserted, skipped: result.skipped })
+
+        if (typeof onTnceraUploadComplete === 'function') {
+          onTnceraUploadComplete(result.rows)
+        }
+
+        setIsProcessing(false)
+        return
+      }
+
+      // ── PHC/HSC path (existing flow — unchanged) ───────────────────────────
 
       // Extract "Chennai" sheet or fall back to the first sheet
       const sheetName = workbook.SheetNames.includes('Chennai')
@@ -40,7 +81,7 @@ function ExcelUploader({ onUploadComplete }) {
       const sheet = workbook.Sheets[sheetName]
       const rows = XLSX.utils.sheet_to_json(sheet)
 
-      // Step 2: Validate columns
+      // Step 3: Validate columns
       const { valid, missingColumns } = validateColumns(rows)
       if (!valid) {
         setParseError(
@@ -50,7 +91,7 @@ function ExcelUploader({ onUploadComplete }) {
         return
       }
 
-      // Step 3: Build location records
+      // Step 4: Build location records
       const phcRecords = []
       const hscRecords = []
       const seenPhcKeys = new Set()
@@ -88,7 +129,7 @@ function ExcelUploader({ onUploadComplete }) {
         })
       }
 
-      // Step 4: Upsert PHC rows first, then fetch their IDs to fill parent_phc_id
+      // Step 5: Upsert PHC rows first, then fetch their IDs to fill parent_phc_id
       const { data: phcData, error: phcError } = await supabase
         .from('locations')
         .upsert(phcRecords, { onConflict: 'query_text', ignoreDuplicates: true })
@@ -131,7 +172,7 @@ function ExcelUploader({ onUploadComplete }) {
         }
       })
 
-      // Step 5: Upsert HSC rows
+      // Step 6: Upsert HSC rows
       const { data: hscData, error: hscError } = await supabase
         .from('locations')
         .upsert(hscRecordsWithParent, { onConflict: 'query_text', ignoreDuplicates: true })
@@ -213,6 +254,14 @@ function ExcelUploader({ onUploadComplete }) {
         </p>
       )}
 
+      {detectedFormat && !isProcessing && (
+        <p className="excel-uploader__format-label" aria-live="polite">
+          {detectedFormat === 'tncera'
+            ? 'Detected: TNCERA format'
+            : 'Detected: PHC/HSC format'}
+        </p>
+      )}
+
       {parseError && (
         <p
           id="excel-uploader-error"
@@ -231,9 +280,9 @@ function ExcelUploader({ onUploadComplete }) {
           role="status"
           aria-live="polite"
         >
-          Upload complete — {uploadStatus.inserted} record
-          {uploadStatus.inserted !== 1 ? 's' : ''} inserted,{' '}
-          {uploadStatus.skipped} skipped (already existed).
+          {detectedFormat === 'tncera'
+            ? `Upload complete — ${uploadStatus.inserted} inserted, ${uploadStatus.skipped} skipped`
+            : `Upload complete — ${uploadStatus.inserted} record${uploadStatus.inserted !== 1 ? 's' : ''} inserted, ${uploadStatus.skipped} skipped (already existed).`}
         </p>
       )}
     </div>
