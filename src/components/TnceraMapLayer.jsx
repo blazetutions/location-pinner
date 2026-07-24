@@ -52,8 +52,9 @@ function clearPopupError(container) {
  * @returns {Object[]} filtered subset of locations
  */
 function applyTnceraFilters(locations, userStatuses, tnceraFilters) {
-  const { types = [], statuses = [] } = tnceraFilters || {}
+  const { districts = [], types = [], statuses = [] } = tnceraFilters || {}
   return locations.filter(loc => {
+    if (districts.length > 0 && !districts.includes(loc.district)) return false
     if (types.length > 0 && !types.includes(loc.establishment_type)) return false
     if (statuses.length > 0) {
       const userStatus = userStatuses.get(loc.id)?.status ?? 'Pending'

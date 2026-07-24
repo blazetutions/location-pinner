@@ -3,86 +3,87 @@ import { useEffect, useState } from 'react'
 /**
  * TnceraFiltersSidebar
  *
- * Independent filter sidebar for the TNCERA clinical establishments layer.
- * Derives establishment type options dynamically from loaded location rows,
- * and provides a fixed Status multi-select. Emits filter state changes via
- * `onFilterChange` — does NOT manage map state directly.
+ * Sidebar filters for the TNCERA clinical establishments layer.
+ * Provides:
+ *  - District multi-select (derived from loaded locations)
+ *  - Type of Establishment multi-select (derived from loaded locations)
+ *  - Visit Status multi-select (fixed: Visited, Converted, Pending)
  *
  * @param {Object}   props
  * @param {Array}    props.locations       - TNCERALocationRow[] (geocoded rows)
- * @param {Function} props.onFilterChange  - ({ types: string[], statuses: string[] }) => void
+ * @param {Function} props.onFilterChange  - ({ districts, types, statuses }) => void
  */
 export default function TnceraFiltersSidebar({ locations = [], onFilterChange }) {
+  const [selectedDistricts, setSelectedDistricts] = useState([])
   const [selectedTypes, setSelectedTypes] = useState([])
   const [selectedStatuses, setSelectedStatuses] = useState([])
 
-  // ---------------------------------------------------------------------------
-  // Derived establishment type options (Req 7.1)
-  // Distinct, non-empty values sorted alphabetically
-  // ---------------------------------------------------------------------------
-  const establishmentTypes = [
-    ...new Set(
-      locations
-        .map(l => l.establishment_type)
-        .filter(Boolean)
-    ),
-  ].sort()
+  // Derived options — distinct, non-empty, sorted
+  const districts = [...new Set(locations.map(l => l.district).filter(Boolean))].sort()
+  const establishmentTypes = [...new Set(locations.map(l => l.establishment_type).filter(Boolean))].sort()
 
-  // ---------------------------------------------------------------------------
-  // Emit filter changes on every state change (Req 7.3, 7.4)
-  // ---------------------------------------------------------------------------
+  // Emit filter changes whenever any selection changes
   useEffect(() => {
     if (typeof onFilterChange === 'function') {
-      onFilterChange({ types: selectedTypes, statuses: selectedStatuses })
+      onFilterChange({
+        districts: selectedDistricts,
+        types: selectedTypes,
+        statuses: selectedStatuses,
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTypes, selectedStatuses])
+  }, [selectedDistricts, selectedTypes, selectedStatuses])
 
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
-
-  function handleTypeToggle(type) {
-    setSelectedTypes(prev =>
-      prev.includes(type)
-        ? prev.filter(t => t !== type)
-        : [...prev, type]
+  function toggle(setter, value) {
+    setter(prev =>
+      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     )
   }
 
-  function handleStatusToggle(status) {
-    setSelectedStatuses(prev =>
-      prev.includes(status)
-        ? prev.filter(s => s !== status)
-        : [...prev, status]
-    )
-  }
-
-  /** Req 7.7, 7.8 — reset both fields and restore full marker visibility */
-  function handleClearFilters() {
+  function handleClear() {
+    setSelectedDistricts([])
     setSelectedTypes([])
     setSelectedStatuses([])
-    // useEffect will fire and call onFilterChange({ types: [], statuses: [] })
   }
 
-  // ---------------------------------------------------------------------------
-  // Fixed status options (Req 7.2)
-  // ---------------------------------------------------------------------------
   const STATUS_OPTIONS = ['Visited', 'Converted', 'Pending']
 
   return (
-    <aside className="tncera-filters-sidebar" aria-label="TNCERA Filters sidebar">
+    <aside className="tncera-filters-sidebar" aria-label="Filters">
       <div className="tncera-filters-sidebar__content">
         <div className="tncera-filters-sidebar__header">
-          <h2 className="tncera-filters-sidebar__title">TNCERA Filters</h2>
+          <h2 className="tncera-filters-sidebar__title">Filters</h2>
         </div>
 
-        {/* Type of Establishment checkboxes (Req 7.1) */}
+        {/* District */}
+        <div className="tncera-filters-sidebar__group">
+          <fieldset className="tncera-filters-sidebar__fieldset">
+            <legend className="tncera-filters-sidebar__label">District</legend>
+            {districts.length === 0 ? (
+              <p className="tncera-filters-sidebar__empty">No data loaded</p>
+            ) : (
+              districts.map(d => (
+                <label key={d} className="tncera-filters-sidebar__checkbox-label">
+                  <input
+                    type="checkbox"
+                    className="tncera-filters-sidebar__checkbox"
+                    checked={selectedDistricts.includes(d)}
+                    onChange={() => toggle(setSelectedDistricts, d)}
+                    aria-label={d}
+                  />
+                  {d}
+                </label>
+              ))
+            )}
+          </fieldset>
+        </div>
+
+        {/* Type of Establishment */}
         <div className="tncera-filters-sidebar__group">
           <fieldset className="tncera-filters-sidebar__fieldset">
             <legend className="tncera-filters-sidebar__label">Type of Establishment</legend>
             {establishmentTypes.length === 0 ? (
-              <p className="tncera-filters-sidebar__empty">No types loaded</p>
+              <p className="tncera-filters-sidebar__empty">No data loaded</p>
             ) : (
               establishmentTypes.map(type => (
                 <label key={type} className="tncera-filters-sidebar__checkbox-label">
@@ -90,7 +91,7 @@ export default function TnceraFiltersSidebar({ locations = [], onFilterChange })
                     type="checkbox"
                     className="tncera-filters-sidebar__checkbox"
                     checked={selectedTypes.includes(type)}
-                    onChange={() => handleTypeToggle(type)}
+                    onChange={() => toggle(setSelectedTypes, type)}
                     aria-label={type}
                   />
                   {type}
@@ -100,7 +101,7 @@ export default function TnceraFiltersSidebar({ locations = [], onFilterChange })
           </fieldset>
         </div>
 
-        {/* Status checkboxes (Req 7.2) */}
+        {/* Visit Status */}
         <div className="tncera-filters-sidebar__group">
           <fieldset className="tncera-filters-sidebar__fieldset">
             <legend className="tncera-filters-sidebar__label">Status</legend>
@@ -110,7 +111,7 @@ export default function TnceraFiltersSidebar({ locations = [], onFilterChange })
                   type="checkbox"
                   className="tncera-filters-sidebar__checkbox"
                   checked={selectedStatuses.includes(status)}
-                  onChange={() => handleStatusToggle(status)}
+                  onChange={() => toggle(setSelectedStatuses, status)}
                   aria-label={status}
                 />
                 {status}
@@ -119,13 +120,12 @@ export default function TnceraFiltersSidebar({ locations = [], onFilterChange })
           </fieldset>
         </div>
 
-        {/* Clear TNCERA Filters button (Req 7.7) */}
         <button
           className="tncera-filters-sidebar__clear"
-          onClick={handleClearFilters}
-          aria-label="Clear TNCERA filters"
+          onClick={handleClear}
+          aria-label="Clear all filters"
         >
-          Clear TNCERA Filters
+          Clear Filters
         </button>
       </div>
     </aside>

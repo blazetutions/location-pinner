@@ -65,16 +65,8 @@ export default function ExportImport() {
       if (result.errors && result.errors.length > 0) {
         setImportStatus({ type: 'error', message: result.errors.join('; ') })
       } else {
-        // Display per-table counts (Requirement 9.7)
-        const parts = []
-        if (result.upsertedPhcHsc > 0 || result.upsertedTncera === 0) {
-          parts.push(`${result.upsertedPhcHsc} PHC/HSC record${result.upsertedPhcHsc !== 1 ? 's' : ''}`)
-        }
-        if (result.upsertedTncera > 0) {
-          parts.push(`${result.upsertedTncera} TNCERA record${result.upsertedTncera !== 1 ? 's' : ''}`)
-        }
-        const summary = parts.length > 0 ? parts.join(', ') : '0 records'
-        setImportStatus({ type: 'success', message: `Imported ${summary}` })
+        const n = result.upserted ?? 0
+        setImportStatus({ type: 'success', message: `Imported ${n} record${n !== 1 ? 's' : ''}` })
       }
     } catch (err) {
       setImportStatus({ type: 'error', message: err.message || 'Import failed' })
