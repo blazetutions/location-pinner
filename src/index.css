@@ -6,9 +6,7 @@
 /* === DESIGN TOKENS === */
 :root {
   /* ── Brand (Blaze Training Centre) ──────────────────────────────────────
-   * IMPORTANT: Confirm exact hex values against the real brand guide /
-   * blazetrainingcentre.in logo before final ship. Values below are the
-   * specified starting direction (#EF4423 blaze red-orange, #0F172A navy).
+   * Brand hex confirmed: #EF4423 blaze red-orange, #0F172A navy.
    * ─────────────────────────────────────────────────────────────────────── */
   --color-brand: #EF4423;
   --color-brand-hover: #D6371A;
