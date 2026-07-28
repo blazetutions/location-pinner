@@ -1096,3 +1096,17 @@ body {
   animation: spin 0.7s linear infinite;
   flex-shrink: 0;
 }
+
+/* === COMPONENT — Map loading state === */
+.map-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: #e5e7eb;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  z-index: 1;
+}

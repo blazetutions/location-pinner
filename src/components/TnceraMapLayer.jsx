@@ -161,7 +161,8 @@ export default function TnceraMapLayer({ map, isVisible, tnceraFilters, onStatus
 
           // Lazily-evaluated popup — only built when the user opens it
           marker.bindPopup(() =>
-            buildTnceraPopupHTML(loc, userStatusesRef.current.get(loc.id))
+            buildTnceraPopupHTML(loc, userStatusesRef.current.get(loc.id)),
+            { maxWidth: 320, className: 'tncera-popup' }
           )
 
           markersMap.set(loc.id, marker)

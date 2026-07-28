@@ -43,19 +43,7 @@ export default function AuthGate({ children }) {
   // Still waiting for the initial session check.
   if (session === undefined) {
     return (
-      <div
-        role="status"
-        aria-live="polite"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          fontFamily: 'sans-serif',
-          fontSize: '1rem',
-          color: '#64748b',
-        }}
-      >
+      <div role="status" aria-live="polite" className="login-wrapper" style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-base)' }}>
         Loading…
       </div>
     )

@@ -20,28 +20,26 @@ export default function MapDisplay({ tnceraFilters = {} }) {
   const containerRef = useRef(null)
   const [mapInstance, setMapInstance] = useState(null)
 
-  // Initialise the Leaflet map once on mount
   useEffect(() => {
     if (!containerRef.current) return
-
     const map = L.map(containerRef.current).setView([TN_LAT, TN_LNG], DEFAULT_ZOOM)
-
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(map)
-
     setMapInstance(map)
-
-    return () => {
-      map.remove()
-      setMapInstance(null)
-    }
+    return () => { map.remove(); setMapInstance(null) }
   }, [])
 
   return (
     <>
+      {/* Subtle loading placeholder until Leaflet initialises */}
+      {!mapInstance && (
+        <div className="map-loading" aria-label="Map loading" role="status" aria-live="polite">
+          <span className="excel-uploader__spinner" aria-hidden="true" />
+          Loading map…
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{ height: '100%', width: '100%' }}
@@ -49,11 +47,7 @@ export default function MapDisplay({ tnceraFilters = {} }) {
         role="application"
       />
       {mapInstance && (
-        <TnceraMapLayer
-          map={mapInstance}
-          isVisible={true}
-          tnceraFilters={tnceraFilters}
-        />
+        <TnceraMapLayer map={mapInstance} isVisible={true} tnceraFilters={tnceraFilters} />
       )}
     </>
   )
