@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import { exportAllStatuses, resetLocations } from '../lib/adminExport'
+import { useTnceraGeocoding } from '../hooks/useTnceraGeocoding.jsx'
 
 /**
  * AdminPanel — user management panel for admins.
@@ -31,6 +32,9 @@ export default function AdminPanel() {
   const [resetLoading, setResetLoading] = useState(false)
   const [resetStatus, setResetStatus] = useState(null)
 
+  // ── Geocoding status (reads from shared context) ─────────────────────────
+  const geocoding = useTnceraGeocoding()
+
   // ── Fetch user list ──────────────────────────────────────────────────────
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -39,7 +43,7 @@ export default function AdminPanel() {
     if (fnError) {
       setError(fnError.message || 'Failed to load users')
     } else {
-      setUsers(data ?? [])
+      setUsers(Array.isArray(data) ? data : [])
     }
     setLoading(false)
   }, [])
@@ -120,6 +124,9 @@ export default function AdminPanel() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
+  const remainingRows = geocoding.total - geocoding.current
+  const minutesRemaining = Math.ceil(remainingRows / 60)
+
   return (
     <section
       aria-labelledby="admin-panel-heading"
@@ -128,6 +135,41 @@ export default function AdminPanel() {
       <h2 id="admin-panel-heading" style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>
         Admin Panel — User Management
       </h2>
+
+      {/* ── Geocoding status ── */}
+      {geocoding.status === 'running' && (
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '0.5rem' }}>
+          <p style={{ margin: '0 0 0.5rem', fontWeight: 600, color: '#1d4ed8', fontSize: '0.875rem' }}>
+            Geocoding in progress
+          </p>
+          <progress
+            value={geocoding.current}
+            max={geocoding.total || 1}
+            style={{ width: '100%', height: 8, marginBottom: '0.25rem' }}
+            aria-label={`Geocoding: ${geocoding.current} of ${geocoding.total}`}
+          />
+          <p role="status" aria-live="polite" style={{ margin: 0, fontSize: '0.8rem', color: '#1d4ed8' }}>
+            {geocoding.total > 0
+              ? `Geocoding ${geocoding.current} / ${geocoding.total}${remainingRows > 0 ? ` — ~${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''} remaining` : ''}`
+              : 'Starting geocoding pass…'}
+          </p>
+        </div>
+      )}
+
+      {geocoding.status === 'done' && geocoding.total > 0 && (
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '0.5rem' }}>
+          <p role="status" style={{ margin: '0 0 0.25rem', fontWeight: 600, color: '#16a34a', fontSize: '0.875rem' }}>
+            Done: {geocoding.counts.geocoded} geocoded, {geocoding.counts.failed} failed
+          </p>
+          {geocoding.failedRows.length > 0 && (
+            <ul style={{ margin: '0.5rem 0 0', padding: '0 0 0 1.25rem', fontSize: '0.8rem', color: '#dc2626', maxHeight: 150, overflowY: 'auto' }}>
+              {geocoding.failedRows.map((row, i) => (
+                <li key={i}><strong>{row.facility_name}</strong>{row.address_text ? ` — ${row.address_text}` : ''}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* ── Invite form ── */}
       <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }}>

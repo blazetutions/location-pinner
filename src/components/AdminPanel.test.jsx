@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AdminPanel from './AdminPanel'
 import { supabase } from '../supabaseClient'
+import { TnceraGeocodingProvider } from '../hooks/useTnceraGeocoding.jsx'
 
 // Mock supabase client
 vi.mock('../supabaseClient', () => ({
@@ -14,23 +15,40 @@ vi.mock('../supabaseClient', () => ({
   },
 }))
 
+// Mock the geocoding engine so the provider never fires real network calls
+vi.mock('../lib/tnceraGeocodingEngine', () => ({
+  runTnceraGeocodingPass: vi.fn(),
+}))
+
+/** Render AdminPanel inside the required context provider */
+function renderAdminPanel() {
+  return render(
+    <TnceraGeocodingProvider>
+      <AdminPanel />
+    </TnceraGeocodingProvider>
+  )
+}
+
 describe('AdminPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders the admin panel with title and sections', () => {
+  it('renders the admin panel with title and sections', async () => {
     // Mock empty user list response
     supabase.functions.invoke.mockResolvedValueOnce({
       data: [],
       error: null,
     })
 
-    render(<AdminPanel />)
+    renderAdminPanel()
 
-    expect(screen.getByText('Admin Panel')).toBeInTheDocument()
-    expect(screen.getByText('Invite User')).toBeInTheDocument()
-    expect(screen.getByText('All Users')).toBeInTheDocument()
+    expect(screen.getByText('Admin Panel — User Management')).toBeInTheDocument()
+    expect(screen.getByText('Invite New User')).toBeInTheDocument()
+    // Wait for table to render after async user fetch
+    await waitFor(() => {
+      expect(screen.getByText('Email')).toBeInTheDocument()
+    })
   })
 
   it('fetches and displays users on mount', async () => {
@@ -54,7 +72,7 @@ describe('AdminPanel', () => {
       error: null,
     })
 
-    render(<AdminPanel />)
+    renderAdminPanel()
 
     // Wait for users to load
     await waitFor(() => {
@@ -78,11 +96,11 @@ describe('AdminPanel', () => {
       error: null,
     })
 
-    render(<AdminPanel />)
+    renderAdminPanel()
 
     // Wait for initial load
     await waitFor(() => {
-      expect(screen.getByText('No users found')).toBeInTheDocument()
+      expect(screen.getByText('No users found.')).toBeInTheDocument()
     })
 
     // Mock invite_user response
@@ -98,7 +116,7 @@ describe('AdminPanel', () => {
     })
 
     // Fill in invite form
-    const emailInput = screen.getByPlaceholderText('user@example.com')
+    const emailInput = screen.getByPlaceholderText('colleague@example.com')
     await user.type(emailInput, 'newuser@example.com')
 
     // Submit form
@@ -125,7 +143,7 @@ describe('AdminPanel', () => {
       error: null,
     })
 
-    render(<AdminPanel />)
+    renderAdminPanel()
 
     // Wait for user to load
     await waitFor(() => {
@@ -148,7 +166,7 @@ describe('AdminPanel', () => {
     })
 
     // Click remove button
-    const removeButton = screen.getByLabelText('Remove user user@example.com')
+    const removeButton = screen.getByLabelText('Remove user@example.com')
     await user.click(removeButton)
 
     // Verify confirm was called
@@ -158,7 +176,7 @@ describe('AdminPanel', () => {
 
     // Wait for success message
     await waitFor(() => {
-      expect(screen.getByText(/User user@example.com deleted successfully/i)).toBeInTheDocument()
+      expect(screen.getByText(/user@example.com removed/i)).toBeInTheDocument()
     })
 
     confirmSpy.mockRestore()
@@ -170,7 +188,7 @@ describe('AdminPanel', () => {
       error: { message: 'Network error' },
     })
 
-    render(<AdminPanel />)
+    renderAdminPanel()
 
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeInTheDocument()
