@@ -28,16 +28,16 @@
  */
 
 /**
- * Regex that matches "Tamil Nadu" at the end of a string, optionally followed by
- * whitespace, a 6-digit PIN code, and/or trailing punctuation/whitespace.
- *
- * Examples that match:
- *   "Tamil Nadu"
- *   "Tamil Nadu 600001"
- *   "Tamil Nadu - 600001"
- *   "Tamil Nadu, 600001."
+ * Checks whether a string already contains "India" (case-insensitive, whole-word).
+ * Used to avoid appending India twice to query_text.
  */
-const TAMIL_NADU_SUFFIX_RE = /Tamil Nadu[\s,\-–.]*(?:\d{6}[\s,\-.]*)?$/i;
+const INDIA_RE = /\bIndia\b/i;
+
+/**
+ * Checks whether a string already contains "Tamil Nadu" (case-insensitive).
+ * Used to decide whether to append the full suffix or just ", India".
+ */
+const TAMIL_NADU_RE = /Tamil Nadu/i;
 
 /**
  * Pure function — no side effects, no I/O.
@@ -59,7 +59,6 @@ export function parseTnceraRow(rawValue) {
   let address_text;
 
   if (commaIndex === -1) {
-    // No comma — full value is the facility name
     facility_name = normalised;
     address_text = '';
   } else {
@@ -67,15 +66,28 @@ export function parseTnceraRow(rawValue) {
     address_text = normalised.slice(commaIndex + 1).trim();
   }
 
-  // --- 3. Build query_text (Requirements 2.4, 2.5, 2.6) ---
+  // --- 3. Build query_text ---
+  // Rule: every non-empty query_text must contain an explicit country reference
+  // so Nominatim can disambiguate sparse Indian street names.
+  //
+  // - Empty address_text → empty query_text (no location to geocode)
+  // - Address already contains "India" → use as-is (no duplication)
+  // - Address contains "Tamil Nadu" but not "India" → append ", India" only
+  //   (avoids "Tamil Nadu, Chennai, Tamil Nadu, India" duplication)
+  // - Address contains neither → append full ", Chennai, Tamil Nadu, India"
   let query_text;
 
-  if (address_text !== '' && !TAMIL_NADU_SUFFIX_RE.test(address_text)) {
-    // address_text is non-empty and does not already end with Tamil Nadu
-    query_text = `${address_text}, Chennai, Tamil Nadu, India`;
-  } else {
-    // Either address_text is empty, or it already ends with Tamil Nadu (+ optional PIN/punct)
+  if (address_text === '') {
+    query_text = '';
+  } else if (INDIA_RE.test(address_text)) {
+    // Already has India — use as-is
     query_text = address_text;
+  } else if (TAMIL_NADU_RE.test(address_text)) {
+    // Has Tamil Nadu but no India — append country only
+    query_text = `${address_text}, India`;
+  } else {
+    // No location anchor at all — append full suffix
+    query_text = `${address_text}, Chennai, Tamil Nadu, India`;
   }
 
   return { facility_name, address_text, query_text };

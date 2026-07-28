@@ -22,9 +22,16 @@ import { applyJitter } from './applyJitter.js'
 import { supabase } from '../supabaseClient.js'
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'ChennaiHealthMap/1.0'
+// NOTE: browsers silently drop any 'User-Agent' header set via fetch() — it is a
+// forbidden header name per the Fetch spec and cannot be overridden from JS.
+// Per Nominatim's usage policy, identify automated use via the `email` query param instead.
+// TODO: add a real contact email to the query string below before scaling up bulk geocoding:
+//   &email=your-contact@example.com
+// See: https://operations.osmfoundation.org/policies/nominatim/
 const RETRY_DELAY_MS = 2000
 const RATE_LIMIT_MS = 1000
+const MAX_RETRIES = 3
+const MAX_RATE_LIMIT_MS = 5000
 
 /**
  * Resolves after `ms` milliseconds.
@@ -39,33 +46,29 @@ export function sleep(ms) {
 
 /**
  * Attempts a single Nominatim HTTP request for `queryText`.
+ * Returns 'rate-limited' specifically for 429 so callers can slow the overall pass rate.
  *
  * @param {string} queryText
- * @returns {Promise<{ lat: number, lng: number } | null | 'retry'>}
- *   - `{ lat, lng }` on a successful non-empty response
- *   - `null`          on an empty result array (address not resolvable — no retry)
- *   - `'retry'`       on a network error or HTTP 429 (caller should retry)
+ * @returns {Promise<{ lat: number, lng: number } | null | 'retry' | 'rate-limited'>}
  */
 async function attemptGeocode(queryText) {
+  // No User-Agent header — browsers forbid setting it from JS (Fetch spec forbidden header).
+  // Identification is via the email query param per Nominatim's usage policy.
+  // TODO: append &email=your-contact@example.com before scaling up bulk geocoding.
   const url =
     `${NOMINATIM_BASE}?q=${encodeURIComponent(queryText)}&format=json&limit=1`
 
   let response
   try {
-    response = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-    })
+    response = await fetch(url)
   } catch {
-    // Network error (DNS failure, timeout, CORS block, etc.)
     return 'retry'
   }
 
   if (response.status === 429) {
-    return 'retry'
+    return 'rate-limited'   // distinct from generic retry so callers can slow down
   }
 
-  // For any other non-OK status treat as a retryable failure so the row can
-  // be attempted again in a future pass, consistent with Requirement 13.4.
   if (!response.ok) {
     return 'retry'
   }
@@ -78,8 +81,7 @@ async function attemptGeocode(queryText) {
   }
 
   if (!Array.isArray(data) || data.length === 0) {
-    // Empty result — address is genuinely unresolvable; do not retry.
-    return null
+    return null   // genuinely unresolvable — no retry
   }
 
   return {
@@ -95,28 +97,44 @@ async function attemptGeocode(queryText) {
  * @param {number} [maxRetries=1] - How many retries are allowed on transient failures.
  * @returns {Promise<{ lat: number, lng: number } | null>}
  */
-export async function geocodeWithRetry(queryText, maxRetries = 1) {
+/**
+ * Geocodes `queryText` via Nominatim with exponential backoff on transient errors.
+ *
+ * @param {string} queryText
+ * @param {number} [maxRetries] - Max retry attempts on transient failures (default 3).
+ * @returns {Promise<{ lat: number, lng: number } | null | 'rate-limited'>}
+ *   - coordinate object on success
+ *   - null on genuine empty result (no retry warranted)
+ *   - 'rate-limited' if a 429 was received and all retries were exhausted,
+ *     so the caller (runTnceraGeocodingPass) can slow down the overall pass rate
+ */
+export async function geocodeWithRetry(queryText, maxRetries = MAX_RETRIES) {
   try {
-    const firstResult = await attemptGeocode(queryText)
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const result = await attemptGeocode(queryText)
 
-    if (firstResult !== 'retry') {
-      // Either a valid coordinate pair or null (empty results — don't retry).
-      return firstResult
-    }
-
-    // Transient failure — retry up to maxRetries times.
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      await sleep(RETRY_DELAY_MS)
-      const retryResult = await attemptGeocode(queryText)
-      if (retryResult !== 'retry') {
-        return retryResult
+      if (result === null) {
+        // Genuine empty result — no point retrying
+        return null
       }
+
+      if (result !== 'retry' && result !== 'rate-limited') {
+        // Success
+        return result
+      }
+
+      if (attempt === maxRetries) {
+        // All retries exhausted — propagate rate-limited signal if that's what we got
+        return result === 'rate-limited' ? 'rate-limited' : null
+      }
+
+      // Exponential backoff: 2s, 4s, 8s … capped at 15s
+      const delay = Math.min(RETRY_DELAY_MS * Math.pow(2, attempt), 15000)
+      await sleep(delay)
     }
 
-    // All retries exhausted.
     return null
   } catch {
-    // Belt-and-suspenders: never let an unexpected error escape.
     return null
   }
 }

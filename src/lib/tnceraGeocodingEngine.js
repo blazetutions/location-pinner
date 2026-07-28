@@ -21,7 +21,8 @@
 import { supabase } from '../supabaseClient.js'
 import { sleep, geocodeWithRetry } from './geocodingEngine.js'
 
-const RATE_LIMIT_MS = 1000
+const BASE_RATE_LIMIT_MS = 1000  // initial delay between requests
+const MAX_RATE_LIMIT_MS = 5000   // cap for adaptive slowdown on 429s
 
 /**
  * Runs a full geocoding pass over all rows in `tncera_locations` where
@@ -56,15 +57,29 @@ export async function runTnceraGeocodingPass({ onEstimate, onProgress }) {
     failedRows: [],
   }
 
+  // Adaptive rate limit — starts at 1 s, doubles on 429 up to 5 s
+  let currentRateLimitMs = BASE_RATE_LIMIT_MS
+
   // Step 3: Process each row with rate limiting (Requirements 4.2, 4.4, 4.5, 4.6, 4.7)
   for (let i = 0; i < total; i++) {
     const row = pendingRows[i]
 
-    // Geocode via Nominatim with built-in retry for 429 / network errors (Req 11.5)
+    // Geocode via Nominatim with exponential backoff for 429 / network errors
     const coords = await geocodeWithRetry(row.query_text)
 
-    if (coords !== null) {
-      // Success: persist coordinates and mark as geocoded (Requirement 4.5)
+    if (coords === 'rate-limited') {
+      // 429 exhausted all retries — slow down the overall pass rate and mark failed
+      currentRateLimitMs = Math.min(currentRateLimitMs * 2, MAX_RATE_LIMIT_MS)
+
+      await supabase
+        .from('tncera_locations')
+        .update({ geocode_status: 'failed' })
+        .eq('id', row.id)
+
+      result.failed++
+      result.failedRows.push({ facility_name: row.facility_name, address_text: row.address_text })
+    } else if (coords !== null) {
+      // Success (Requirement 4.5)
       await supabase
         .from('tncera_locations')
         .update({ lat: coords.lat, lng: coords.lng, geocode_status: 'geocoded' })
@@ -72,23 +87,18 @@ export async function runTnceraGeocodingPass({ onEstimate, onProgress }) {
 
       result.geocoded++
     } else {
-      // Empty result or exhausted retries: mark failed, collect for report
-      // PHC-fallback is deliberately NOT applied here (Requirement 4.7)
-      // (Requirements 4.6, 4.8)
+      // Genuine empty result — mark failed, no PHC-fallback (Requirement 4.7)
       await supabase
         .from('tncera_locations')
         .update({ geocode_status: 'failed' })
         .eq('id', row.id)
 
       result.failed++
-      result.failedRows.push({
-        facility_name: row.facility_name,
-        address_text: row.address_text,
-      })
+      result.failedRows.push({ facility_name: row.facility_name, address_text: row.address_text })
     }
 
-    // Enforce 1000 ms between every Nominatim request (Requirement 4.2)
-    await sleep(RATE_LIMIT_MS)
+    // Adaptive delay between requests
+    await sleep(currentRateLimitMs)
 
     // Notify caller of progress (Requirement 4.4)
     onProgress(i + 1, total)

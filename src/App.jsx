@@ -56,6 +56,7 @@ function AppContent() {
   const [showUploader, setShowUploader] = useState(false)
   const [tnceraRows, setTnceraRows] = useState([])
   const [tnceraFilters, setTnceraFilters] = useState({ districts: [], types: [], statuses: [] })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -80,16 +81,16 @@ function AppContent() {
       <header className="app-header">
         <h1>TN Clinical Establishments Map</h1>
 
-        {roleLoading ? (
-          <span className="role-loading" aria-live="polite">Loading…</span>
-        ) : (
-          isAdmin && <span className="admin-badge" aria-label="You have admin access">Admin</span>
-        )}
-
-        {/* Persistent geocoding indicator — visible regardless of panel state */}
+        {/* Persistent geocoding indicator — always visible */}
         <GeocodingHeaderIndicator onOpenPanel={openPanel} />
 
-        <nav className="app-nav" aria-label="Main navigation">
+        {/* Desktop nav — hidden on mobile */}
+        <nav className="app-nav app-nav--desktop" aria-label="Main navigation">
+          {roleLoading ? (
+            <span className="role-loading" aria-live="polite">Loading…</span>
+          ) : (
+            isAdmin && <span className="admin-badge" aria-label="You have admin access">Admin</span>
+          )}
           <button
             type="button"
             className="nav-link"
@@ -101,12 +102,43 @@ function AppContent() {
           {isAdmin && (
             <a href="#admin" className="nav-link nav-link--admin">Admin Panel</a>
           )}
+          <button onClick={handleLogout} className="logout-btn" aria-label="Log out">
+            Logout
+          </button>
         </nav>
 
-        <button onClick={handleLogout} className="logout-btn" aria-label="Log out">
-          Logout
+        {/* Mobile hamburger — shown only on small screens */}
+        <button
+          className="app-header__hamburger"
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen(v => !v)}
+        >
+          <span aria-hidden="true">{mobileMenuOpen ? '✕' : '☰'}</span>
         </button>
       </header>
+
+      {/* Mobile menu drawer */}
+      {mobileMenuOpen && (
+        <div className="app-mobile-menu" role="navigation" aria-label="Mobile menu">
+          {isAdmin && <span className="admin-badge" style={{ marginBottom: '0.5rem', display: 'inline-block' }} aria-label="You have admin access">Admin</span>}
+          <button
+            type="button"
+            className="app-mobile-menu__item"
+            onClick={() => { setShowUploader(v => !v); setMobileMenuOpen(false) }}
+          >
+            {showUploader ? 'Hide Upload' : 'Upload Excel'}
+          </button>
+          {isAdmin && (
+            <a href="#admin" className="app-mobile-menu__item" onClick={() => setMobileMenuOpen(false)}>
+              Admin Panel
+            </a>
+          )}
+          <button onClick={handleLogout} className="app-mobile-menu__item" aria-label="Log out">
+            Logout
+          </button>
+        </div>
+      )}
 
       {/* ── Upload panel (collapsible) ── */}
       {/* Collapsing this panel never stops the geocoding pass — the pass lives in the hook */}

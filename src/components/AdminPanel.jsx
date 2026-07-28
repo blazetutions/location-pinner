@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
-import { exportAllStatuses, resetLocations } from '../lib/adminExport'
+import { exportAllStatuses, resetLocations, retryFailedRows } from '../lib/adminExport'
 import { useTnceraGeocoding } from '../hooks/useTnceraGeocoding.jsx'
 
 export default function AdminPanel() {
@@ -15,6 +15,8 @@ export default function AdminPanel() {
   const [exportStatus, setExportStatus] = useState(null)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetStatus, setResetStatus] = useState(null)
+  const [retryLoading, setRetryLoading] = useState(false)
+  const [retryStatus, setRetryStatus] = useState(null)
 
   const geocoding = useTnceraGeocoding()
 
@@ -60,8 +62,7 @@ export default function AdminPanel() {
     setExportLoading(false)
   }
 
-  async function handleReset() {
-    setResetLoading(true)
+  async function handleReset() {    setResetLoading(true)
     setResetStatus(null)
     const result = await resetLocations(() => { setUsers([]) })
     if (result.cancelled) { setResetLoading(false); return }

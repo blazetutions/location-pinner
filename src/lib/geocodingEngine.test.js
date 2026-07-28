@@ -90,13 +90,15 @@ describe('geocodeWithRetry', () => {
       expect(calledUrl).toContain(encodeURIComponent('Adyar PHC, Chennai'))
     })
 
-    it('includes the User-Agent header on every request', async () => {
+    it('does not pass a User-Agent header (browsers forbid it; identification is via email param)', async () => {
       fetch.mockReturnValueOnce(makeSuccessResponse())
 
       await geocodeWithRetry('Some Address')
 
-      const calledHeaders = fetch.mock.calls[0][1].headers
-      expect(calledHeaders['User-Agent']).toBe('ChennaiHealthMap/1.0')
+      // fetch should be called with only the URL (no second options argument
+      // containing headers), since User-Agent is a forbidden header in Fetch spec
+      const callArgs = fetch.mock.calls[0]
+      expect(callArgs).toHaveLength(1)
     })
   })
 
@@ -138,17 +140,21 @@ describe('geocodeWithRetry', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
 
-    it('returns null after both attempts fail with network error', async () => {
+    it('returns null after all retries fail with network error', async () => {
+      // maxRetries=3 → 4 attempts total with backoff: 2s, 4s, 8s
       fetch
+        .mockImplementationOnce(makeNetworkError())
+        .mockImplementationOnce(makeNetworkError())
         .mockImplementationOnce(makeNetworkError())
         .mockImplementationOnce(makeNetworkError())
 
       const promise = geocodeWithRetry('Some Address')
-      await vi.advanceTimersByTimeAsync(2000)
+      // Advance past exponential backoff: 2s + 4s + 8s = 14s
+      await vi.advanceTimersByTimeAsync(14000)
       const result = await promise
 
       expect(result).toBeNull()
-      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch).toHaveBeenCalledTimes(4)
     })
 
     it('waits 2000ms before retrying on network error', async () => {
@@ -187,20 +193,23 @@ describe('geocodeWithRetry', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
 
-    it('returns null after HTTP 429 and retry also fails with 429', async () => {
+    it('returns rate-limited after all retries fail with 429', async () => {
+      // maxRetries=3 → 4 attempts total
       fetch
+        .mockReturnValueOnce(make429Response())
+        .mockReturnValueOnce(make429Response())
         .mockReturnValueOnce(make429Response())
         .mockReturnValueOnce(make429Response())
 
       const promise = geocodeWithRetry('Some Address')
-      await vi.advanceTimersByTimeAsync(2000)
+      await vi.advanceTimersByTimeAsync(14000)
       const result = await promise
 
-      expect(result).toBeNull()
-      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(result).toBe('rate-limited')
+      expect(fetch).toHaveBeenCalledTimes(4)
     })
 
-    it('includes User-Agent header on retry requests as well', async () => {
+    it('does not pass User-Agent on retry requests either', async () => {
       fetch
         .mockReturnValueOnce(make429Response())
         .mockReturnValueOnce(makeSuccessResponse())
@@ -209,21 +218,24 @@ describe('geocodeWithRetry', () => {
       await vi.advanceTimersByTimeAsync(2000)
       await promise
 
-      // Both calls must carry the User-Agent
+      // No call should have a headers options object
       for (const call of fetch.mock.calls) {
-        expect(call[1].headers['User-Agent']).toBe('ChennaiHealthMap/1.0')
+        expect(call).toHaveLength(1)
       }
     })
   })
 
   describe('error safety — never throws', () => {
     it('does not throw when fetch rejects', async () => {
+      // maxRetries=3 → 4 attempts total, advance past all backoff
       fetch
+        .mockImplementationOnce(makeNetworkError())
+        .mockImplementationOnce(makeNetworkError())
         .mockImplementationOnce(makeNetworkError())
         .mockImplementationOnce(makeNetworkError())
 
       const promise = geocodeWithRetry('Bad Address')
-      await vi.advanceTimersByTimeAsync(2000)
+      await vi.advanceTimersByTimeAsync(14000)
 
       await expect(promise).resolves.toBeNull()
     })

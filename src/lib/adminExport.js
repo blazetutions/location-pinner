@@ -71,3 +71,41 @@ export async function resetLocations(onResetComplete) {
 
   return { success: true }
 }
+
+// ── retryFailedRows ──────────────────────────────────────────────────────────
+
+/**
+ * Resets all `tncera_locations` rows with `geocode_status = 'failed'` back to
+ * `'pending'` so the next geocoding pass will re-attempt them.
+ *
+ * This is intentionally separate from `resetLocations` — it does NOT delete any
+ * data; it only re-queues failed geocoding attempts for a fresh pass.
+ *
+ * @returns {Promise<{ success: boolean, count?: number, error?: string }>}
+ */
+export async function retryFailedRows() {
+  // Count failed rows first so we can report how many were re-queued
+  const { count, error: countError } = await supabase
+    .from('tncera_locations')
+    .select('*', { count: 'exact', head: true })
+    .eq('geocode_status', 'failed')
+
+  if (countError) {
+    return { success: false, error: countError.message }
+  }
+
+  if (count === 0) {
+    return { success: true, count: 0 }
+  }
+
+  const { error } = await supabase
+    .from('tncera_locations')
+    .update({ geocode_status: 'pending' })
+    .eq('geocode_status', 'failed')
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, count }
+}
