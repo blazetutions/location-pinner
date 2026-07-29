@@ -6,13 +6,34 @@ import AdminPanel from './AdminPanel'
 import { supabase } from '../supabaseClient'
 import { TnceraGeocodingProvider } from '../hooks/useTnceraGeocoding.jsx'
 
-// Mock supabase client
-vi.mock('../supabaseClient', () => ({
-  supabase: {
-    functions: {
-      invoke: vi.fn(),
+// Mock supabase client — includes both functions.invoke and from() for new tables
+vi.mock('../supabaseClient', () => {
+  const makeChain = () => {
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }
+    // Make the chain itself thenable so await supabase.from(...).select(...) works
+    chain.then = (resolve) => resolve({ data: null, error: null })
+    return chain
+  }
+
+  return {
+    supabase: {
+      functions: { invoke: vi.fn() },
+      from: vi.fn(() => makeChain()),
     },
-  },
+  }
+})
+
+// Mock detectDuplicates so it doesn't hit real Supabase
+vi.mock('../lib/detectDuplicates', () => ({
+  detectDuplicates: vi.fn().mockResolvedValue({ pairs: [], error: null }),
+  resolveDuplicatePair: vi.fn().mockResolvedValue({ success: true, error: null }),
+  bulkResolvePairs: vi.fn().mockResolvedValue({ success: true, error: null }),
 }))
 
 // Mock the geocoding engine so the provider never fires real network calls
